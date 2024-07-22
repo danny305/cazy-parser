@@ -30,7 +30,7 @@ def main():
     ap = argparse.ArgumentParser()
 
     group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument("--fasta-genbank", action="store_true")
+    group.add_argument("--fasta-genbank", action="store_true") # Original default
     group.add_argument("--fasta-uniprot", action="store_true")
     group.add_argument("--metadata", action="store_true")
 
@@ -46,8 +46,6 @@ def main():
     ap.add_argument("-c", "--characterized", action="store_true", default=False)
 
     ap.add_argument("-d", "--out-dir", type=Path, default=Path.cwd() / "fasta")
-
-    ap.add_argument("-i", "--genbank-id", action="store_true")
 
     ap.add_argument("--debug-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default="INFO")
 
@@ -77,7 +75,8 @@ def main():
     log.info("")
     log.info("┌─┐┌─┐┌─┐┬ ┬   ┌─┐┌─┐┬─┐┌─┐┌─┐┬─┐")
     log.info("│  ├─┤┌─┘└┬┘───├─┘├─┤├┬┘└─┐├┤ ├┬┘")
-    log.info(f"└─┘┴ ┴└─┘ ┴    ┴  ┴ ┴┴└─└─┘└─┘┴└─ v{VERSION}")
+    log.info("└─┘┴ ┴└─┘ ┴    ┴  ┴ ┴┴└─└─┘└─┘┴└─")
+    log.info(f"v{VERSION}")
     log.info("")
     log.info("-" * 42)
 
