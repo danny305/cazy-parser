@@ -5,16 +5,36 @@ import re
 import string
 import sys
 import urllib
+import urllib.error
 import urllib.request
 from typing import Optional
+from time import sleep
 
 import requests
 from bs4 import BeautifulSoup
+import bs4
 
 from cazy_parser.utils import init_bar
 
 log = logging.getLogger("cazylog")
 
+
+def process_ec_text(ec_text: str) -> str:
+    ec_re = re.compile(r"(\d{1}.\d+.[0-9a-zA-Z]+.[0-9a-zA-Z]+(?!\.))")
+    ec_matches = ec_re.findall(ec_text)
+
+    return ":".join(ec_matches)
+
+def process_pdb_text(pdb_text: str) -> str:
+    pdb_red = re.compile(r"(\w{4,8})\[(.+?)\]")
+
+    pdb_chains = [
+        f"{pdb_id}_{chain}"
+        for pdb_id, chains in pdb_red.findall(pdb_text)
+            for chain in chains.split(",")
+    ]
+
+    return ":".join(pdb_chains)
 
 def fetch_data(link_list):
     """
@@ -66,7 +86,7 @@ def parse_td(td_list):
         return data_dict
 
     protein_name = td_list[0].text
-    ec = td_list[1].text
+    ec = process_ec_text(td_list[1].text)
     # referece = td_list[2].text
     organism = td_list[3].text
     try:
@@ -75,7 +95,9 @@ def parse_td(td_list):
         genbank = "unavailable"
 
     uniprot = td_list[5].text
-    pdb = td_list[6].text
+    pdb = process_pdb_text(td_list[6].text)
+
+    subfamily = td_list[7].text if len(td_list) > 7 else "unavailable"
 
     data_dict["protein_name"] = protein_name
     data_dict["ec"] = ec
@@ -83,11 +105,12 @@ def parse_td(td_list):
     data_dict["genbank"] = genbank
     data_dict["uniprot"] = uniprot
     data_dict["pdb"] = pdb
+    data_dict["subfamily"] = subfamily
 
     return data_dict
 
 
-def parse_table(table):
+def parse_table(table: bs4.element.Tag) -> list[dict]:
     """
     Parse a beautiful soup table and retrieve information.
 
@@ -182,13 +205,14 @@ def fetch_links(
     enzyme_class: str,
     family: Optional[int] = None,
     subfamily: Optional[int] = None,
-    characterized: Optional[bool] = None,
+    characterized: bool = False,
 ) -> list[str]:
     """Fetch link structure for an enzyme class."""
 
     main_class_link = f"http://www.cazy.org/{enzyme_class}.html"
     log.info(f"Fetching links for {enzyme_class}, url: {main_class_link}")
     family_list = fetch_families(main_class_link)
+
 
     # Filter by family
     if family:
@@ -199,6 +223,8 @@ def fetch_links(
             log.info(f"Only using links of family {family}")
             family_list = [e for e in family_list if int(e[2:]) == family]
 
+    log.info(f"Found {len(family_list)} families")
+
     if characterized:
         log.info("Only using characterized links")
 
@@ -207,57 +233,71 @@ def fetch_links(
         sys.exit()
 
     page_list = []
-    for j, family in enumerate(family_list):
-        # bar.update(j + 1)
-        family_link = f"http://www.cazy.org/{family}.html"
+    try: 
+        for j, family in enumerate(family_list, start=1):
+            if j % 10 == 0:
+                log.debug(f"Completed {j}: Sleeping for 10 seconds...")
+                sleep(10)
+            # bar.update(j)
+            family_link = f"http://www.cazy.org/{family}.html"
 
-        # TODO: Implement checkpoint for link fetching
+            # TODO: Implement checkpoint for link fetching
 
-        family_soup = BeautifulSoup(
-            urllib.request.urlopen(family_link), features="html.parser"
-        )
+            family_soup = BeautifulSoup(
+                urllib.request.urlopen(family_link), features="html.parser"
+            )
 
-        # Find the links to the individual pages
-        superfamily_links = []
-        for line in family_soup.findAll("span", attrs={"class": "choix"}):
-            _link = line.find("a")["href"]
-            if "krona" not in _link and "structure" not in _link:
-                superfamily_links.append(_link)
+            # Find the links to the individual pages
+            superfamily_links = []
+            for line in family_soup.findAll("span", attrs={"class": "choix"}):
+                _link = line.find("a")["href"]
+                if "krona" not in _link and "structure" not in _link:
+                    superfamily_links.append(_link)
 
-        for link in superfamily_links:
-            page_zero = link
-            try:
-                soup = BeautifulSoup(
-                    urllib.request.urlopen(link), features="html.parser"
-                )
-            except ValueError:
-                # This is a link to a text file
-                page_list.append(f"http://www.cazy.org/{link}")
-                continue
+            log.debug(f"Superfamily links: {superfamily_links}")
+            for link in superfamily_links:
+                page_zero = link
+                try:
+                    soup = BeautifulSoup(
+                        urllib.request.urlopen(link), features="html.parser"
+                    )
+                except ValueError:
+                    # This is a link to a text file
+                    page_list.append(f"http://www.cazy.org/{link}")
+                    continue
 
-            # Get page list for the family
-            page_index_list = soup.findAll(name="a", attrs={"class": "lien_pagination"})
-            if bool(page_index_list):
-                # =====================#
-                # be careful with this #
-                first_page_idx = int(re.findall(r"=(\d*)#", str(page_index_list[0]))[0])
-                last_page_idx = int(re.findall(r"=(\d*)#", str(page_index_list[-2]))[0])
-                # =====================#
+                # Get page list for the family
+                page_index_list = soup.findAll(name="a", attrs={"class": "lien_pagination"})
+                if bool(page_index_list):
+                    # =====================#
+                    # be careful with this #
+                    first_page_idx = int(re.findall(r"=(\d*)#", str(page_index_list[0]))[0])
+                    last_page_idx = int(re.findall(r"=(\d*)#", str(page_index_list[-2]))[0])
+                    # =====================#
 
-                page_list.append(page_zero)
-                page_range = range(
-                    first_page_idx, last_page_idx + first_page_idx, first_page_idx
-                )
-                for i in page_range:
-                    sub_str = page_index_list[0]["href"].split("=")[0]
-                    link = f"http://www.cazy.org/{sub_str}={i}"
-                    page_list.append(link)
+                    page_list.append(page_zero)
+                    page_range = range(
+                        first_page_idx, last_page_idx + first_page_idx, first_page_idx
+                    )
+                    for i in page_range:
+                        sub_str = page_index_list[0]["href"].split("=")[0]
+                        link = f"http://www.cazy.org/{sub_str}={i}"
+                        log.debug(f"Page index links: {link}")
+                        page_list.append(link)
 
-            else:
-                page_list.append(page_zero)
+                else:
+                    page_list.append(page_zero)
+
+    except urllib.error.HTTPError as e:
+        log.error(f"HTTP Error: {e}")
+        log.warning(f"Completed families: {family_list[:j]}")
+        log.warning(f"Incomplete families: {family_list[j:]}")
+        log.warning(f"Moving forward with completed links: {len(page_list)}")
 
     if characterized:
         page_list = [e for e in page_list if "characterized" in e]
+
+    log.info(f"Total links found: {len(page_list)}")
 
     return page_list
 
@@ -341,15 +381,69 @@ def fetch_species():
     return species_dic
 
 
-def retrieve_genbank_ids(
-    enzyme_name: str, family: int, subfamily: int, characterized: bool
+def retrieve_cazy_metadata(
+    enzyme_name: str, 
+    family: Optional[int], 
+    subfamily: Optional[int], 
+    characterized: bool = False,
+    filter: Optional[str] = None
 ) -> list[str]:
-    """Retrieve genbank IDs for a given enzyme."""
+    """Retrieve metadata of given enzyme(s)."""
     page_list = fetch_links(enzyme_name, family, subfamily, characterized)
     data = fetch_data(page_list)
-    genbank_id_list = []
-    for element in data:
-        if "genbank" in element:
-            genbank_id_list.append(element["genbank"])
+    log.info(f"Retrieved {len(data)} entries")
 
-    return genbank_id_list
+    if filter:
+        data = [element for element in data if filter in element]
+        log.info(f"Retrieved {len(data)} entries with valid {filter}")
+
+    return data
+
+def retrieve_prop_from_metadata(
+        property: str, 
+        enzyme_name: str,  
+        family: Optional[int], 
+        subfamily: Optional[int], 
+        characterized: bool = False
+) -> list:
+    """Retrieve property for a given enzyme(s)."""
+    metadata = retrieve_cazy_metadata(enzyme_name, family, subfamily, characterized, property)
+    
+    prop_data = [
+        element[property]
+        for element in metadata
+        if property in element
+    ]
+    
+    log.info(f"Retrieved {len(prop_data)} entries with valid {property}")
+
+    return prop_data
+
+def retrieve_uniprot_from_metadata(
+    enzyme_name: str, family: Optional[int], subfamily: Optional[int], characterized: bool = False
+) -> list[str]:
+    """Retrieve uniprot IDs for a given enzyme(s)."""
+    return retrieve_prop_from_metadata("uniprot", enzyme_name, family, subfamily, characterized)
+    
+def retrieve_genbank_from_metadata(
+    enzyme_name: str, family: Optional[int], subfamily: Optional[int], characterized: bool = False
+) -> list[str]:
+    """Retrieve uniprot IDs for a given enzyme(s)."""
+    return retrieve_prop_from_metadata("genbank", enzyme_name, family, subfamily, characterized)
+    
+
+# def retrieve_metadata_if_genbank_id(
+#     enzyme_name: str, family: Optional[int], subfamily: Optional[int], characterized: bool = False
+# ) -> list[str]:
+#     """Retrieve genbank IDs for a given enzyme."""
+#     page_list = fetch_links(enzyme_name, family, subfamily, characterized)
+#     data = fetch_data(page_list)
+#     data_list = [element for element in data if "genbank" in element]
+
+#     log.info(f"Retrieved {len(data_list)} entries with valid genbank ids")
+
+#     return data_list
+
+
+
+    
