@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from cazy_parser.modules.fasta import download_fastas, dump_fastas, dump_id_list
+from cazy_parser.modules.fasta import download_genbank_fastas, dump_fastas, dump_id_list
 
 
 @pytest.fixture
@@ -12,7 +12,7 @@ def id_list():
 
 
 def test_download_fastas(id_list):
-    observed_fasta_list = download_fastas(id_list)
+    observed_fasta_list = download_genbank_fastas(id_list)
 
     assert len(observed_fasta_list) == 2
     assert observed_fasta_list[0][0] == ">"

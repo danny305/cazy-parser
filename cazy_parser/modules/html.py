@@ -20,7 +20,7 @@ log = logging.getLogger("cazylog")
 
 
 def process_ec_text(ec_text: str) -> str:
-    ec_re = re.compile(r"(\d{1}.\d+.[0-9a-zA-Z]+.[0-9a-zA-Z]+(?!\.))")
+    ec_re = re.compile(r"(\d{1}.\d+.[0-9a-zA-Z-]+.[0-9a-zA-Z-]+(?!\.))")
     ec_matches = ec_re.findall(ec_text)
 
     return ":".join(ec_matches)
@@ -35,6 +35,25 @@ def process_pdb_text(pdb_text: str) -> str:
     ]
 
     return ":".join(pdb_chains)
+
+def process_uniprot_text(uniprot_text: str) -> str:
+    """TODO make sure this works across all cases"""
+    processed_ids = []
+    uniprot_text = uniprot_text.replace("\xa0","")
+    while uniprot_text != "":
+        if uniprot_text.startswith("A0"):
+            processed_ids.append(uniprot_text[:10])
+            uniprot_text = uniprot_text[10:]
+        elif len(uniprot_text) % 6 == 0:
+            processed_ids.append(uniprot_text[:6])
+            uniprot_text = uniprot_text[6:]
+        else:
+            log.warning(f"Uniprot text {uniprot_text} is not divisble by 6; not sure if correct")
+            processed_ids.append(uniprot_text)
+            uniprot_text = ""
+
+
+    return ":".join(processed_ids)
 
 def fetch_data(link_list):
     """
@@ -94,7 +113,7 @@ def parse_td(td_list):
     except AttributeError:
         genbank = "unavailable"
 
-    uniprot = td_list[5].text
+    uniprot = process_uniprot_text(td_list[5].text)
     pdb = process_pdb_text(td_list[6].text)
 
     subfamily = td_list[7].text if len(td_list) > 7 else "unavailable"
@@ -206,6 +225,7 @@ def fetch_links(
     family: Optional[int] = None,
     subfamily: Optional[int] = None,
     characterized: bool = False,
+    **kwargs
 ) -> list[str]:
     """Fetch link structure for an enzyme class."""
 
@@ -232,12 +252,14 @@ def fetch_links(
         log.error("No links were found.")
         sys.exit()
 
+    sleep_time = kwargs.get("sleep_time", None)
     page_list = []
     try: 
         for j, family in enumerate(family_list, start=1):
-            if j % 10 == 0:
-                log.debug(f"Completed {j}: Sleeping for 10 seconds...")
-                sleep(10)
+            sleep(1)
+            if isinstance(sleep_time, int) and j % 10 == 0:
+                log.debug(f"Completed {j}: Sleeping for {sleep_time} seconds...")
+                sleep(sleep_time)
             # bar.update(j)
             family_link = f"http://www.cazy.org/{family}.html"
 
@@ -386,16 +408,17 @@ def retrieve_cazy_metadata(
     family: Optional[int], 
     subfamily: Optional[int], 
     characterized: bool = False,
-    filter: Optional[str] = None
+    filter_: Optional[str] = None,
+    **kwargs
 ) -> list[str]:
     """Retrieve metadata of given enzyme(s)."""
-    page_list = fetch_links(enzyme_name, family, subfamily, characterized)
+    page_list = fetch_links(enzyme_name, family, subfamily, characterized, **kwargs)
     data = fetch_data(page_list)
     log.info(f"Retrieved {len(data)} entries")
 
-    if filter:
-        data = [element for element in data if filter in element]
-        log.info(f"Retrieved {len(data)} entries with valid {filter}")
+    if filter_:
+        data = [element for element in data if filter_ in element]
+        log.info(f"Retrieved {len(data)} entries with valid {filter_}")
 
     return data
 

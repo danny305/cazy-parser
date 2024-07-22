@@ -3,9 +3,10 @@ import argparse
 import logging
 import sys
 import time
+from pprint import pprint
 
 from cazy_parser import ENZYME_LIST
-from cazy_parser.modules.fasta import dump_fastas, dump_id_list
+from cazy_parser.modules.fasta import dump_fastas, dump_id_list, flatten
 from cazy_parser.modules.html import retrieve_cazy_metadata
 from cazy_parser.modules.metadata import dump_metadata
 from cazy_parser.version import VERSION
@@ -17,6 +18,9 @@ ch.setFormatter(formatter)
 log.addHandler(ch)
 log.setLevel("DEBUG")
 
+TODAY = time.strftime("%m%d%y")
+
+
 
 # ====================================================================================#
 # Main code
@@ -26,7 +30,8 @@ def main():
     ap = argparse.ArgumentParser()
 
     group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument("--fasta", action="store_true")
+    group.add_argument("--fasta-genbank", action="store_true")
+    group.add_argument("--fasta-uniprot", action="store_true")
     group.add_argument("--metadata", action="store_true")
 
     ap.add_argument(
@@ -46,7 +51,8 @@ def main():
 
     ap.add_argument("--debug-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default="INFO")
 
-
+    ap.add_argument("--sleep-time", type=int, default=10)
+    
     ap.add_argument(
         "-v",
         "--version",
@@ -75,19 +81,7 @@ def main():
     log.info("")
     log.info("-" * 42)
 
-    # id_list = retrieve_genbank_ids(
-    #     enzyme_name, args.family, args.subfamily, args.characterized
-    # )
 
-    cazy_metdata = retrieve_cazy_metadata(
-        enzyme_name, 
-        args.family, 
-        args.subfamily, 
-        args.characterized,
-        "genbank"
-    )
-
-    id_list = [element["genbank"] for element in cazy_metdata]
 
     output_fname = f"{args.enzyme_class}"
     if args.family:
@@ -97,40 +91,68 @@ def main():
     if args.characterized:
         output_fname += "_characterized"
 
-    today = time.strftime("%m%d%y")
-    output_fname += f"_{today}"
+    
 
-    gb_dir = args.out_dir / "genbank" 
-    gb_dir.mkdir(0o774, parents=True, exist_ok=True)
+    if args.fasta_genbank: 
+        fasta_type = "genbank"
+        output_fname += f"_{fasta_type}"
+    elif args.fasta_uniprot:
+        fasta_type = "uniprot"
+        output_fname += f"_{fasta_type}"
+    else:
+        fasta_type = None
+
+    output_fname += f"_{TODAY}"
+        
+    cazy_metadata = retrieve_cazy_metadata(
+        enzyme_name, 
+        args.family, 
+        args.subfamily, 
+        args.characterized,
+        fasta_type,
+        sleep_time=args.sleep_time
+    )
+
+    if fasta_type:
+        id_list = flatten([element[fasta_type] for element in cazy_metadata])
+        id_list = [item.replace("\xa0","") for item in id_list if item.replace("\xa0","")]
+
+    id_dir = args.out_dir / "id" 
 
     fasta_dir = args.out_dir / "fasta"
     meta_dir = args.out_dir / "metadata"
 
-    gb_id_fname = gb_dir / f"{output_fname}.txt"
-    if args.fasta:
+
+    if fasta_type:
         try:
+            id_dir.mkdir(0o774, parents=True, exist_ok=True)
+            id_fname = id_dir / f"{output_fname}.txt"
+
             fasta_dir.mkdir(0o774, parents=True, exist_ok=True) 
-            fasta_out = fasta_dir / f"{output_fname}.fasta"
-            dump_fastas(id_list, fasta_out)
+            fasta_out = fasta_dir / f"{output_fname}_{fasta_type}.fasta"
+
+            dump_fastas(id_list, fasta_type, fasta_out)
 
         except Exception as e:
             log.debug(e)
             log.warning(
-                "Could not fetch the fasta sequences, dumping the sequence IDs instead."
+                f"Could not fetch the fasta sequences ({fasta_type}), dumping the sequence IDs instead."
             )
-            log.warning(
-                "This is probably due to the NCBI server being inaccessible. Please try again later or manually download the sequences from NCBI"
-            )
-            log.warning(
-                f"Please upload {gb_id_fname} to `https://www.ncbi.nlm.nih.gov/sites/batchentrez` to download the sequences"
-            )
+            if fasta_type == "genbank":
+                log.warning(
+                    "This is probably due to the NCBI server being inaccessible. Please try again later or manually download the sequences from NCBI"
+                )
+                log.warning(
+                    f"Please upload {id_fname} to `https://www.ncbi.nlm.nih.gov/sites/batchentrez` to download the sequences"
+                )
         finally: 
-            dump_id_list(id_list, gb_id_fname)
+            dump_id_list(id_list, id_fname)
 
     else:
         meta_dir.mkdir(0o774, parents=True, exist_ok=True)
         meta_out = meta_dir / f"{output_fname}.csv"
-        dump_metadata(cazy_metdata, meta_out)
+
+        dump_metadata(cazy_metadata, meta_out)
 
 
 if __name__ == "__main__":
