@@ -454,7 +454,12 @@ def retrieve_genbank_from_metadata(
     """Retrieve uniprot IDs for a given enzyme(s)."""
     return retrieve_prop_from_metadata("genbank", enzyme_name, family, subfamily, characterized)
     
-
+def retrieve_pdb_chains_from_metadata(
+    enzyme_name: str, family: Optional[int], subfamily: Optional[int], characterized: bool = False
+) -> list[str]:
+    """Retrieve uniprot IDs for a given enzyme(s)."""
+    return retrieve_prop_from_metadata("pdb", enzyme_name, family, subfamily, characterized)
+    
 # def retrieve_metadata_if_genbank_id(
 #     enzyme_name: str, family: Optional[int], subfamily: Optional[int], characterized: bool = False
 # ) -> list[str]:
