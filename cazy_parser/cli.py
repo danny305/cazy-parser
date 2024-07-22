@@ -45,7 +45,7 @@ def main():
 
     ap.add_argument("-c", "--characterized", action="store_true", default=False)
 
-    ap.add_argument("-d", "--out-dir", type=Path, default=Path.cwd() / "fasta")
+    ap.add_argument("-d", "--out-dir", type=Path, default=Path.cwd() / "data")
 
     ap.add_argument("--debug-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default="INFO")
 
