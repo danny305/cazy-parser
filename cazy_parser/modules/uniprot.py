@@ -1,3 +1,4 @@
+from pathlib import Path
 from io import StringIO
 import logging
 import re
@@ -34,7 +35,7 @@ def fetch_uniprot_sequence(uniprot_id: str, endpoint=UNIPROT_FASTA_URL) -> tuple
         return None, None
     
 
-def batch_fetch_uniprot_sequence(uniprot_ids: list[str]):
+def batch_fetch_uniprot_sequence(uniprot_ids: list[str], outfile: Path):
     """This fails for IDs that require pinging the UNISAVE endpoint"""
     ids = ",".join(set(uniprot_ids))
 
@@ -44,10 +45,17 @@ def batch_fetch_uniprot_sequence(uniprot_ids: list[str]):
     if response.status_code == 200:
         fasta_batch = StringIO(response.text)
 
-        for record in SeqIO.parse(fasta_batch, "fasta"):
-            print(f"ID: {record.id}")
-            print(f"Description: {record.description}")
-            print(f"Sequence: {record.seq}")
+        records = SeqIO.parse(fasta_batch, "fasta")
+
+        outfile.parent.mkdir(0o774, parents=True, exist_ok=True)
+        
+        with outfile.open("wt") as f:
+            SeqIO.write(records, f, "fasta")
+
+        # for record in records:
+        #     print(f"ID: {record.id}")
+        #     print(f"Description: {record.description}")
+        #     print(f"Sequence: {record.seq}")
 
 
     
