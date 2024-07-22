@@ -3,9 +3,9 @@ pythonpath = ["src"]
 
 [tool.poetry]
 name = "cazy-parser"
-version = "2.0.3"
+version = "2.1.0"
 description = "A way to extract specific information from CAZy"
-authors = ["Rodrigo V. Honorato <rvhonorato@protonmail.com>"]
+authors = ["Rodrigo V. Honorato <rvhonorato@protonmail.com>", "Danny J. Diaz <dannyjdiaz305@gmail.com>"]
 readme = "README.md"
 packages = [{ include = "cazy_parser" }]
 classifiers = [
@@ -26,6 +26,8 @@ beautifulsoup4 = "^4.11.1"
 requests = "^2.27.1"
 biopython = "^1.81"
 progressbar2 = "^4.2.0"
+tqdm = "^4.66.0"
+pandas = "^2.2.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.3.1"
